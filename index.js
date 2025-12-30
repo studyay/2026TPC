@@ -352,8 +352,8 @@ async function downloadBackAsPNG() {
 
   // ✅ 줄바꿈(한국어도 안정적으로)
   const paddingX = Math.round(w * 0.12); 
-  const maxWidth = w - paddingX * 2; 
-  const lines = wrapText(ctx, textToDraw, maxWidth);
+  const maxWidth2 = w - paddingX * 2; 
+  const lines2 = wrapText(ctx, textToDraw, maxWidth2);
 
   // 중앙 배치
   const lineHeight = Math.round(fontSize * 1.35);
