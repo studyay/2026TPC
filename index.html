@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2026년 TPC 말씀뽑기</title>
+  <link rel="stylesheet" href="index.css" />
+  <script defer src="index.js"></script>
+</head>
+
+<body>
+  <div class="title">2026 내게 주신 하나님의 말씀</div>
+
+  <!-- 카드 -->
+  <div id="postcard" class="card" role="button" aria-label="카드 뒤집기">
+    <div class="card-inner" id="cardInner">
+      <!-- FRONT -->
+      <div class="card-face card-front">
+        <img src="./2026card.jpeg" class="postcard-background" alt="카드 앞면" />
+      </div>
+
+      <!-- BACK -->
+      <div class="card-face card-back" id="cardBack">
+        <img src="./cardback.png" class="postcard-background" alt="카드 뒷면" />
+        <div class="back-overlay">
+          <p class="p-message" id="verseText"></p>
+          <!--<p class="p-name">@affinity universe</p>
+          <p class="p-name">The power church</p>-->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 버튼 -->
+  <div id="btn-containor">
+    <button id="downloadBtn" type="button">DOWNLOAD</button>
+  </div>
+</body>
+
+</html>
