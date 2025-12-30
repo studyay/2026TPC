@@ -258,7 +258,7 @@ async function downloadBackAsPNG() {
 
   // ✅ 폰트 로드 보장
   try {
-    await document.fonts.load("20px Ownglyph_ryurue-Rg");
+    await document.fonts.load("20px ZEN-SERIF-TTF-Regular");
     await document.fonts.ready;
   } catch (e) {}
 
@@ -279,7 +279,7 @@ async function downloadBackAsPNG() {
   ctx.textBaseline = "middle";
 
   const fontSize = Math.round(w * 0.05);
-  ctx.font = `bold ${fontSize}px Ownglyph_ryurue-Rg`;
+  ctx.font = `bold ${fontSize}px ZEN-SERIF-TTF-Regular`;
 
   // ✅ 줄바꿈(한국어도 안정적으로)
   const paddingX = Math.round(w * 0.12);
@@ -297,8 +297,8 @@ async function downloadBackAsPNG() {
   }
 
   // 하단 계정명
-  ctx.font = `bold ${Math.round(fontSize * 0.75)}px Ownglyph_ryurue-Rg`;
-  ctx.fillText("@holy_chariot", Math.round(w / 2), Math.round(h * 0.78));
+  //ctx.font = `bold ${Math.round(fontSize * 0.75)}px ZEN-SERIF-TTF-Regular`;
+  //ctx.fillText("@holy_chariot", Math.round(w / 2), Math.round(h * 0.78));
 
   // 다운로드
   const a = document.createElement("a");
