@@ -202,6 +202,7 @@ const messages = [
   "우리가 이 소망을 가지고 있는 것은 영혼의 닻 같아서 튼튼하고 견고하여 휘장 안에 들어 가나니 (히브리서 6:19)"
 ];
 
+
 /***************************************************************
  * 1) 랜덤 구절
  ***************************************************************/
@@ -348,6 +349,11 @@ async function downloadBackAsPNG() {
   // 글자 크기(이미지 크기에 비례)
   const fontSize = Math.round(w * 0.05);
   ctx.font = `bold ${fontSize}px ZEN-SERIF-TTF-Regular`;
+
+  // ✅ 줄바꿈(한국어도 안정적으로)
+  const paddingX = Math.round(w * 0.12); 
+  const maxWidth = w - paddingX * 2; 
+  const lines = wrapText(ctx, textToDraw, maxWidth);
 
   // 중앙 배치
   const lineHeight = Math.round(fontSize * 1.35);
