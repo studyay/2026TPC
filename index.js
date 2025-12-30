@@ -202,66 +202,133 @@ const messages = [
   "우리가 이 소망을 가지고 있는 것은 영혼의 닻 같아서 튼튼하고 견고하여 휘장 안에 들어 가나니 (히브리서 6:19)"
 ];
 
-
+/***************************************************************
+ * 1) 랜덤 구절
+ ***************************************************************/
 function getRandomMessage() {
   const randomIndex = Math.floor(Math.random() * messages.length);
   return messages[randomIndex];
 }
 
-let currentVerse = "";
+let currentVerse = "";          // 원문(줄바꿈 없는 1문장)
+let currentVerseLines = [];     // 화면/다운로드에서 공통으로 쓰는 줄 배열
 
-function setNewVerse() {
-  currentVerse = getRandomMessage();
-  const verseEl = document.getElementById("verseText");
-  if (verseEl) verseEl.textContent = currentVerse;
-}
-
-function wrapText(ctx, text, maxWidth) {
-  // ✅ 공백 기준으로 먼저 시도
-  const hasSpace = /\s/.test(text);
-  const units = hasSpace ? text.split(/\s+/) : Array.from(text); // 공백 없으면 글자 단위
+/***************************************************************
+ * 2) 한국어 줄바꿈(안정형)
+ *   - 공백이 있으면 단어 기준
+ *   - 공백이 거의 없거나 너무 긴 토큰은 글자 단위로 쪼개기
+ ***************************************************************/
+function wrapTextKoreanSafe(ctx, text, maxWidth) {
   const lines = [];
   let line = "";
 
-  for (let i = 0; i < units.length; i++) {
-    const piece = units[i];
-    const testLine = line ? (hasSpace ? `${line} ${piece}` : `${line}${piece}`) : piece;
-    const { width } = ctx.measureText(testLine);
+  const words = text.split(/\s+/).filter(Boolean);
+  const useWordMode = words.length > 1; // 공백이 거의 없으면 false
+  const units = useWordMode ? words : Array.from(text);
 
-    if (width > maxWidth && line) {
-      lines.push(line);
-      line = piece;
-    } else {
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i];
+    const testLine = line
+      ? (useWordMode ? `${line} ${u}` : `${line}${u}`)
+      : u;
+
+    if (ctx.measureText(testLine).width <= maxWidth) {
       line = testLine;
+      continue;
     }
+
+    // line이 비어 있는데도 폭을 넘는 경우(아주 긴 토큰) -> 글자 단위로 강제 분해
+    if (!line) {
+      const chars = Array.from(u);
+      let chunk = "";
+      for (const ch of chars) {
+        const t = chunk + ch;
+        if (ctx.measureText(t).width > maxWidth && chunk) {
+          lines.push(chunk);
+          chunk = ch;
+        } else {
+          chunk = t;
+        }
+      }
+      if (chunk) lines.push(chunk);
+      line = "";
+      continue;
+    }
+
+    lines.push(line);
+    line = u;
   }
+
   if (line) lines.push(line);
   return lines;
 }
 
+/***************************************************************
+ * 3) 화면에 "처음부터" 줄바꿈 적용
+ *   - verseText 요소의 실제 폭 기준으로 줄바꿈 계산
+ *   - 화면용 폰트는 verseText의 computedStyle을 사용(줄바꿈 오차 최소화)
+ ***************************************************************/
+function setNewVerse() {
+  currentVerse = getRandomMessage();
+
+  const verseEl = document.getElementById("verseText");
+  if (!verseEl) return;
+
+  // 측정용 캔버스
+  const c = document.createElement("canvas");
+  const ctx = c.getContext("2d");
+
+  // 화면에 표시되는 폰트와 동일해야 줄바꿈이 자연스럽게 맞음
+  const style = getComputedStyle(verseEl);
+  // font shorthand가 있으면 그대로 쓰는 게 가장 정확
+  ctx.font = style.font && style.font !== "normal" ? style.font : `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+  // 화면 폭 기준(약간 여백 감안)
+  const rect = verseEl.getBoundingClientRect();
+  const maxWidth = rect.width * 0.92;
+
+  currentVerseLines = wrapTextKoreanSafe(ctx, currentVerse, maxWidth);
+
+  // ✅ 화면에 줄바꿈을 "처음부터" 반영
+  // (CSS에서 #verseText { white-space: pre-line; } 필요)
+  verseEl.textContent = currentVerseLines.join("\n");
+}
+
+/***************************************************************
+ * 4) 다운로드(PNG)
+ *   - 뒷면 배경은 <img class="postcard-background" ...> 를 사용해야 함
+ *   - 다운로드 텍스트는 "화면에 보이는 줄바꿈 그대로" 사용
+ ***************************************************************/
 async function downloadBackAsPNG() {
   const backImg = document.querySelector(".card-back .postcard-background");
-  if (!backImg) return;
+  if (!backImg) {
+    console.error("뒷면 배경 이미지(.postcard-background)를 찾을 수 없습니다.");
+    return;
+  }
 
-  // ✅ 다운로드 시점에 "뒷면에 실제 표시된 말씀"을 가져오기
+  // 화면에 보이는 텍스트(줄바꿈 포함)를 그대로 가져오기
   const verseEl = document.getElementById("verseText");
-  const verseText = (verseEl?.textContent || "").trim();
-  const textToDraw = verseText || currentVerse || "말씀을 먼저 뽑아주세요 🙂";
+  const textToDraw = (verseEl?.textContent || "").trim();
+  const linesToDraw = textToDraw ? textToDraw.split("\n") : (currentVerseLines.length ? currentVerseLines : ["말씀을 먼저 뽑아주세요 🙂"]);
 
-  // ✅ 이미지 로드/디코딩 보장
+  // 이미지 로드 보장
   if (!backImg.complete) {
-    await new Promise((res) => (backImg.onload = res));
+    await new Promise((res, rej) => {
+      backImg.onload = res;
+      backImg.onerror = rej;
+    });
   }
   if (backImg.decode) {
     try { await backImg.decode(); } catch (e) {}
   }
 
-  // ✅ 폰트 로드 보장
+  // 폰트 로드 보장(캔버스 텍스트 품질)
   try {
     await document.fonts.load("20px ZEN-SERIF-TTF-Regular");
     await document.fonts.ready;
   } catch (e) {}
 
+  // 캔버스 크기(원본 이미지 기준)
   const w = backImg.naturalWidth || 1200;
   const h = backImg.naturalHeight || 1680;
 
@@ -278,55 +345,64 @@ async function downloadBackAsPNG() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
+  // 글자 크기(이미지 크기에 비례)
   const fontSize = Math.round(w * 0.05);
   ctx.font = `bold ${fontSize}px ZEN-SERIF-TTF-Regular`;
 
-  // ✅ 줄바꿈(한국어도 안정적으로)
-  const paddingX = Math.round(w * 0.12);
-  const maxWidth = w - paddingX * 2;
-  const lines = wrapText(ctx, textToDraw, maxWidth);
-
-  // 세로 중앙 배치
+  // 중앙 배치
   const lineHeight = Math.round(fontSize * 1.35);
-  const blockHeight = lines.length * lineHeight;
+  const blockHeight = linesToDraw.length * lineHeight;
   let y = Math.round(h * 0.5 - blockHeight / 2);
 
-  for (const line of lines) {
+  for (const line of linesToDraw) {
     ctx.fillText(line, Math.round(w / 2), y);
     y += lineHeight;
   }
 
-  // 하단 계정명
-  //ctx.font = `bold ${Math.round(fontSize * 0.75)}px ZEN-SERIF-TTF-Regular`;
-  //ctx.fillText("@holy_chariot", Math.round(w / 2), Math.round(h * 0.78));
+  // ✅ 다운로드: toBlob 방식(모바일/사파리 포함 안정적)
+  canvas.toBlob((blob) => {
+    if (!blob) {
+      console.error("PNG blob 생성 실패");
+      return;
+    }
 
-  // 다운로드
-  const a = document.createElement("a");
-  a.download = "verse-card.png";
-  a.href = canvas.toDataURL("image/png");
-  a.click();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.download = "verse-card.png";
+    a.href = url;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  }, "image/png");
 }
 
-
+/***************************************************************
+ * 5) 이벤트
+ *   - 클릭 시: flip만(말씀 유지)
+ *   - 다운로드 버튼: PNG 저장
+ ***************************************************************/
 window.addEventListener("DOMContentLoaded", () => {
   const card = document.getElementById("postcard");
   const downloadBtn = document.getElementById("downloadBtn");
 
-  // 첫 로드 시 말씀 1개 준비(앞면 상태에서 뒷면 내용만 세팅)
+  // 첫 로드 시 말씀 1개 준비 (처음부터 줄바꿈 적용)
   setNewVerse();
 
-  card.addEventListener("click", () => {
-    const willFlipToBack = !card.classList.contains("is-flipped");
+  // 카드 클릭: 뒤집기만, 말씀 유지
+  if (card) {
+    card.addEventListener("click", () => {
+      card.classList.toggle("is-flipped");
+    });
+  }
 
-    // "뒷면으로 넘어갈 때"마다 새 말씀 뽑기
-    //if (willFlipToBack) setNewVerse();
-
-    card.classList.toggle("is-flipped");
-  });
-
-  downloadBtn.addEventListener("click", (e) => {
-    e.stopPropagation(); // 버튼 클릭이 카드 flip 트리거 안 되게
-    downloadBackAsPNG();
-  });
+  // 다운로드 버튼
+  if (downloadBtn) {
+    downloadBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      downloadBackAsPNG();
+    });
+  }
 });
-
