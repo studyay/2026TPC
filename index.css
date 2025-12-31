@@ -56,14 +56,14 @@ body {
 
 .title {
   color: white;
-  font-size: 30px;
+  font-size: 24px;
   margin-bottom: 20px;
   text-align: center;
 }
 
 .card {
-  width: 400px;
-  height: 478px;
+  width: 300px;
+  height: 358px;
   perspective: 1200px;
   cursor: pointer;
   user-select: none;
@@ -112,9 +112,9 @@ body {
 
 .p-message {
   color: rgb(46, 65, 114);
-  font-size: 20px;
+  font-size: 17px;
   font-weight: bold;
-  line-height: 1.5;
+  line-height: 2;
   margin: 0 0 14px 0;
   text-shadow: 0 0 0 rgba(0,0,0,0);
 }
@@ -147,4 +147,17 @@ button {
 button:hover {
   background-color: #fff;
   color: black;
+}
+
+#verseText{
+  white-space: pre-line;
+  text-align: center;
+  word-break: keep-all;   /* 한국어 줄바꿈 품질 */
+}
+
+/* 예: verseText를 감싸는 영역이 있다면 그 영역에 */
+.verse-area{
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
