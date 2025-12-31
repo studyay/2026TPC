@@ -161,3 +161,17 @@ button:hover {
   align-items: center;
   justify-content: center;
 }
+
+
+.is-instagram .card-inner {
+  transform: none !important;
+}
+
+.is-instagram .card-front {
+  display: none;
+}
+
+.is-instagram .card-back {
+  transform: none !important;
+  backface-visibility: visible !important;
+}
