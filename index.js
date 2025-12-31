@@ -215,6 +215,15 @@ let currentVerse = "";          // 원문(줄바꿈 없는 1문장)
 let currentVerseLines = [];     // 화면/다운로드에서 공통으로 쓰는 줄 배열
 
 /***************************************************************
+ * 인스타/스레드 WebView 감지(3D 텍스트 렌더 버그 폴백)
+ ***************************************************************/
+const isInstagramWebView = /Instagram|Threads/i.test(navigator.userAgent);
+if (isInstagramWebView) {
+  document.documentElement.classList.add("is-instagram");
+}
+
+
+/***************************************************************
  * 말씀 출처 앞에서 자동 줄바꿈
  *  - " (" → "\n("
  *  - 이미 줄바꿈이 있으면 그대로 유지
