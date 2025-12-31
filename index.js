@@ -202,11 +202,6 @@ const messages = [
   "우리가 이 소망을 가지고 있는 것은 영혼의 닻 같아서 튼튼하고 견고하여 휘장 안에 들어 가나니 (히브리서 6:19)"
 ];
 
-/***************************************************************
- * 0) 상태
- ***************************************************************/
-let currentVerse = "";
-let currentVerseLines = [];
 
 /***************************************************************
  * 1) 랜덤 구절
@@ -216,57 +211,170 @@ function getRandomMessage() {
   return messages[randomIndex];
 }
 
+let currentVerse = "";          // 원문(줄바꿈 없는 1문장)
+let currentVerseLines = [];     // 화면/다운로드에서 공통으로 쓰는 줄 배열
+
+/***************************************************************
+ * 말씀 출처 앞에서 자동 줄바꿈
+ *  - " (" → "\n("
+ *  - 이미 줄바꿈이 있으면 그대로 유지
+ ***************************************************************/
+function breakBeforeReference(text) {
+  const t = String(text);
+
+  // 끝의 "(…)" 또는 "（…）"를 찾아 그 앞에서 줄바꿈
+  // 이미 줄바꿈이 있으면 중복 줄바꿈 방지
+  return t.replace(/\s*[\(（]([^\)）]+)[\)）]\s*$/, "\n($1)");
+}
+
+
 /***************************************************************
  * 2) 한국어 줄바꿈(안정형)
+ *   - 공백이 있으면 단어 기준
+ *   - 공백이 거의 없거나 너무 긴 토큰은 글자 단위로 쪼개기
  ***************************************************************/
 function wrapTextKoreanSafe(ctx, text, maxWidth) {
-  const lines = [];
-  let line = "";
+  const out = [];
 
-  const words = text.split(/\s+/).filter(Boolean);
-  const useWordMode = words.length > 1;
-  const units = useWordMode ? words : Array.from(text);
+  // ✅ 강제 줄바꿈(\n)은 유지한 채로, 각 덩어리별로 wrap
+  const parts = String(text).split("\n");
 
-  for (let i = 0; i < units.length; i++) {
-    const u = units[i];
-    const testLine = line ? (useWordMode ? `${line} ${u}` : `${line}${u}`) : u;
-
-    if (ctx.measureText(testLine).width <= maxWidth) {
-      line = testLine;
+  for (let p = 0; p < parts.length; p++) {
+    const part = parts[p].trim();
+    if (!part) {
+      // 연속 개행도 보존
+      out.push("");
       continue;
     }
 
-    // 아주 긴 토큰(단어) 대응: 글자 단위로 강제 분해
-    if (!line) {
-      const chars = Array.from(u);
-      let chunk = "";
-      for (const ch of chars) {
-        const t = chunk + ch;
-        if (ctx.measureText(t).width > maxWidth && chunk) {
-          lines.push(chunk);
-          chunk = ch;
-        } else {
-          chunk = t;
-        }
+    const lines = [];
+    let line = "";
+
+    const words = part.split(/\s+/).filter(Boolean);
+    const useWordMode = words.length > 1;
+    const units = useWordMode ? words : Array.from(part);
+
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      const testLine = line
+        ? (useWordMode ? `${line} ${u}` : `${line}${u}`)
+        : u;
+
+      if (ctx.measureText(testLine).width <= maxWidth) {
+        line = testLine;
+        continue;
       }
-      if (chunk) lines.push(chunk);
-      line = "";
-      continue;
+
+      if (!line) {
+        // 아주 긴 토큰 강제 분해
+        const chars = Array.from(u);
+        let chunk = "";
+        for (const ch of chars) {
+          const t = chunk + ch;
+          if (ctx.measureText(t).width > maxWidth && chunk) {
+            lines.push(chunk);
+            chunk = ch;
+          } else {
+            chunk = t;
+          }
+        }
+        if (chunk) lines.push(chunk);
+        line = "";
+        continue;
+      }
+
+      lines.push(line);
+      line = u;
     }
 
-    lines.push(line);
-    line = u;
+    if (line) lines.push(line);
+
+    // 결과 합치기
+    out.push(...lines);
+
+    // ✅ 원문에 개행이 있었던 위치는 “강제 줄바꿈”으로 유지
+    // 다음 파트가 있으면 줄을 끊어주기
+    if (p < parts.length - 1) {
+      // 빈 줄은 원치 않으면 아래 줄 제거하고 그냥 다음 줄로만 넘어가도 됨
+      // out.push("");  // <- “한 줄 공백”을 원할 때만 사용
+    }
   }
 
-  if (line) lines.push(line);
+  return out;
+}
+
+
+/***************************************************************
+ * 2-0) 균형 줄바꿈(마지막 줄이 너무 짧을 때 재배치)
+ ***************************************************************/
+function wrapTextKoreanBalanced(ctx, text, maxWidth) {
+  let lines = wrapTextKoreanSafe(ctx, text, maxWidth);
+  if (lines.length <= 1) return lines;
+
+  const getWidth = (s) => ctx.measureText(s).width;
+  const lastW = getWidth(lines[lines.length - 1]);
+
+  // 마지막 줄이 너무 짧으면(기준 55%) 폭을 줄여 재줄바꿈 → 줄 길이 균형 개선
+  if (lines.length >= 3 && lastW < maxWidth * 0.55) {
+    const factors = [0.95, 0.92, 0.90, 0.88, 0.86];
+    let best = lines;
+    let bestScore = Infinity;
+
+    for (const f of factors) {
+      const candidate = wrapTextKoreanSafe(ctx, text, maxWidth * f);
+      const widths = candidate.map(getWidth);
+      const maxW = Math.max(...widths);
+      const minW = Math.min(...widths);
+      const score = (maxW - minW); // 줄 길이 편차가 작을수록 좋음
+
+      if (score < bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    return best;
+  }
+
   return lines;
 }
 
 /***************************************************************
+ * 2-1) 박스에 맞게 폰트 크기 자동 조절 + 줄바꿈
+ *  - maxWidth 안에 줄바꿈
+ *  - maxHeight(세로) 안에 들어올 때까지 fontSize를 줄임
+ ***************************************************************/
+function layoutTextToBox(ctx, text, maxWidth, maxHeight, fontFamily, startFontSize, minFontSize, lineHeightRatio = 1.35) {
+  let fontSize = startFontSize;
+  let lines = [];
+
+  while (fontSize >= minFontSize) {
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    lines = wrapTextKoreanSafe(ctx, text, maxWidth);
+
+    const lineHeight = Math.round(fontSize * lineHeightRatio);
+    const blockHeight = lines.length * lineHeight;
+
+    if (blockHeight <= maxHeight) {
+      return { fontSize, lines, lineHeight, blockHeight };
+    }
+    fontSize -= 1;
+  }
+
+  // 최소 폰트에서도 넘치면: 최소 폰트 기준으로 반환(넘침은 감수)
+  ctx.font = `bold ${minFontSize}px ${fontFamily}`;
+  lines = wrapTextKoreanSafe(ctx, text, maxWidth);
+  const lineHeight = Math.round(minFontSize * lineHeightRatio);
+  const blockHeight = lines.length * lineHeight;
+  return { fontSize: minFontSize, lines, lineHeight, blockHeight };
+}
+
+/***************************************************************
  * 3) 화면에 "처음부터" 줄바꿈 적용
+ *   - verseText 요소의 실제 폭 기준으로 줄바꿈 계산
+ *   - 화면용 폰트는 verseText의 computedStyle을 사용(줄바꿈 오차 최소화)
  ***************************************************************/
 function setNewVerse() {
-  currentVerse = getRandomMessage();
+  currentVerse = breakBeforeReference(getRandomMessage());
 
   const verseEl = document.getElementById("verseText");
   if (!verseEl) return;
@@ -275,133 +383,72 @@ function setNewVerse() {
   const c = document.createElement("canvas");
   const ctx = c.getContext("2d");
 
-  // 화면 폰트와 동일하게 맞춰야 줄바꿈이 안 깨짐
   const style = getComputedStyle(verseEl);
-  ctx.font =
-    style.font && style.font !== "normal"
-      ? style.font
-      : `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
 
-  // verseText의 실제 폭 기준
-  const rect = verseEl.getBoundingClientRect();
-  const maxWidth = rect.width * 0.92;
+  // 폰트 패밀리
+  const fontFamily = style.fontFamily || "serif";
 
-  currentVerseLines = wrapTextKoreanSafe(ctx, currentVerse, maxWidth);
+  // ✅ 콘텐츠 박스(패딩 제외) 기준으로 폭/높이 계산
+  const padL = parseFloat(style.paddingLeft) || 0;
+  const padR = parseFloat(style.paddingRight) || 0;
+  const padT = parseFloat(style.paddingTop) || 0;
+  const padB = parseFloat(style.paddingBottom) || 0;
 
-  // 화면에 줄바꿈 반영 (CSS에 white-space: pre-line 필요)
+  const contentW = Math.max(0, verseEl.clientWidth - padL - padR);
+  const contentH = Math.max(0, verseEl.clientHeight - padT - padB);
+
+  // 여백 감안(필요하면 수치만 미세조정)
+  const maxWidth  = contentW * 0.96;
+  const maxHeight = contentH * 0.92;
+
+  // 시작 폰트 크기(처음 한 번만 기준값 고정)
+  if (!verseEl.dataset.baseFontSize) {
+    verseEl.dataset.baseFontSize = String(parseFloat(style.fontSize) || 48);
+  }
+  const startFontSize = Math.round(parseFloat(verseEl.dataset.baseFontSize) || 48);
+
+  const minFontSize = 16;
+  const lineHeightRatio = 1.65;
+
+  // ✅ 폰트 줄이면서 “균형 줄바꿈” 적용
+  let fontSize = startFontSize;
+  let lines = [];
+
+  while (fontSize >= minFontSize) {
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    lines = wrapTextKoreanBalanced(ctx, currentVerse, maxWidth);
+
+    const lineHeight = Math.round(fontSize * lineHeightRatio);
+    const blockHeight = lines.length * lineHeight;
+
+    if (blockHeight <= maxHeight) break;
+    fontSize -= 1;
+  }
+
+  currentVerseLines = lines;
+
+  // ✅ 화면 반영
+  verseEl.style.fontSize = `${fontSize}px`;
+  verseEl.style.lineHeight = `${lineHeightRatio}`; // px 말고 비율로(렌더링 안정)
   verseEl.textContent = currentVerseLines.join("\n");
 }
 
-/***************************************************************
- * 4) 다운로드(PNG)
- * - 배경은 반드시 <img class="postcard-background" src="./cardback.png"> 형태여야 함
- ***************************************************************/
-async function downloadBackAsPNG() {
-  const backImg = document.querySelector(".card-back .postcard-background");
-  const verseEl = document.getElementById("verseText");
-
-  if (!backImg) {
-    console.error("뒷면 배경 이미지(.postcard-background)를 찾을 수 없습니다.");
-    return;
-  }
-
-  // 화면에 보이는 줄바꿈 그대로 사용
-  const textToDraw = (verseEl?.textContent || "").trim();
-  const linesToDraw = textToDraw
-    ? textToDraw.split("\n")
-    : (currentVerseLines.length ? currentVerseLines : ["말씀을 먼저 뽑아주세요 🙂"]);
-
-  // 이미지 로드 보장
-  if (!backImg.complete) {
-    await new Promise((res, rej) => {
-      backImg.onload = res;
-      backImg.onerror = rej;
-    });
-  }
-  if (backImg.decode) {
-    try { await backImg.decode(); } catch (e) {}
-  }
-
-  // 폰트 로드 보장 (여기 폰트명은 실제 사용 폰트로 맞추세요)
-  try {
-    // 예: Ownglyph_ryurue-Rg를 쓰면 아래도 동일하게
-    await document.fonts.load("20px Ownglyph_ryurue-Rg");
-    await document.fonts.ready;
-  } catch (e) {}
-
-  const w = backImg.naturalWidth || 1200;
-  const h = backImg.naturalHeight || 1680;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-
-  // 배경
-  ctx.drawImage(backImg, 0, 0, w, h);
-
-  // 텍스트 스타일
-  ctx.fillStyle = "rgb(46, 65, 114)";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  const fontSize = Math.round(w * 0.05);
-  ctx.font = `bold ${fontSize}px Ownglyph_ryurue-Rg`;
-
-  // 중앙 배치
-  const lineHeight = Math.round(fontSize * 1.35);
-  const blockHeight = linesToDraw.length * lineHeight;
-  let y = Math.round(h * 0.5 - blockHeight / 2);
-
-  for (const line of linesToDraw) {
-    ctx.fillText(line, Math.round(w / 2), y);
-    y += lineHeight;
-  }
-
-  // 하단 계정명(원하시면 유지)
-  ctx.font = `bold ${Math.round(fontSize * 0.75)}px Ownglyph_ryurue-Rg`;
-  ctx.fillText("@holy_chariot", Math.round(w / 2), Math.round(h * 0.78));
-
-  // ✅ 다운로드: toBlob (안정적)
-  canvas.toBlob((blob) => {
-    if (!blob) {
-      console.error("PNG blob 생성 실패");
-      return;
-    }
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.download = "verse-card.png";
-    a.href = url;
-
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    URL.revokeObjectURL(url);
-  }, "image/png");
-}
 
 /***************************************************************
  * 5) 이벤트
+ *   - 클릭 시: flip만(말씀 유지)
+ *   - 다운로드 버튼: PNG 저장
  ***************************************************************/
 window.addEventListener("DOMContentLoaded", () => {
   const card = document.getElementById("postcard");
-  const downloadBtn = document.getElementById("downloadBtn");
 
+  // 첫 로드 시 말씀 1개 준비 (처음부터 줄바꿈 적용)
   setNewVerse();
 
+  // 카드 클릭: 뒤집기만, 말씀 유지
   if (card) {
     card.addEventListener("click", () => {
-      card.classList.toggle("is-flipped"); // 클릭 시 구절 유지
-    });
-  }
-
-  if (downloadBtn) {
-    downloadBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      downloadBackAsPNG();
+      card.classList.toggle("is-flipped");
     });
   }
 });
